@@ -1,9 +1,10 @@
 ## Interface: 20506
 ## Title: BiS Theme
-## Notes: Shared colour palette and the BiS> header prompt for the BiS* addons. Load first; other addons list it under OptionalDeps.
+## Notes: Shared colour palette, the BiS> header prompt, and the options window for the BiS* addons. Load first; other addons list it under OptionalDeps.
 ## Author: Kumlust
-## Version: 1.1.0
+## Version: 1.2.0
 ## X-Category: Library
 
 BiSTheme.lua
 Console.lua
+Options.lua
