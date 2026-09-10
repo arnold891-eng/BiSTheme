@@ -2,7 +2,7 @@
 ## Title: BiS Theme
 ## Notes: Shared colour palette, the BiS> header prompt, and the options window for the BiS* addons. Load first; other addons list it under OptionalDeps.
 ## Author: Kumlust
-## Version: 1.2.0
+## Version: 1.2.1
 ## X-Category: Library
 
 BiSTheme.lua
