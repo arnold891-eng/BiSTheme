@@ -1,4 +1,4 @@
-# The BiS header — `BiS> _` prompt (`BiSTheme/Console.lua`, CONSOLE_MINOR 3)
+# The BiS header — `BiS> _` prompt (`BiSTheme/Console.lua`, CONSOLE_MINOR 4)
 
 The title of every BiS window is a command prompt. It shows `BiS> ` in accent, then words
 that rotate through what the addon is doing, then a cursor blinking at 2 Hz. Words fade out
@@ -94,10 +94,20 @@ place for good; `Current` already skips cleared keys. Test: toggle a slot five t
 `#order` stays 2 and the rotation alternates (the old code reads `TTTT`). Synced to every
 embedder with `sync.ps1`; the section below says which.
 
+## The cursor shift — fixed in minor 4 (11 Sep 2026, debt #18)
+
+Was: the cursor was a `"_"`/`" "` swapped into the words FontString every half second, and
+on the client that swap moved the words a hair each blink (Arn, on the Healing plate:
+"every time it adds the _ it does a micro shift of the text"). Now the cursor is a
+FontString of its own, hung off the words' right edge, blinked by **alpha**; the words text
+never carries it and never changes between phases. `Text()` still reads `…_` / `… ` so
+every existing assert holds. Test: paint two phases, `words:GetText()` identical and free of
+`_`, `cur:GetAlpha()` alternating 1/0. Synced to every embedder the same day.
+
 ## Who wears it (verified on disk 11 Sep 2026)
 
 BiSTools (first, 8 Sep) · Nebbinator 3.1.0 · BiSHealing rc49 · BiSGamba 1.1.0 · BiSJC v4 ·
-BiSInnervate 3.3.6 — all six at md5 `9af6af04` (minor 2) until 11 Sep pm; minor 3 is `9e7767eb`, synced the same day.
+BiSInnervate 3.3.6 — all six at md5 `9af6af04` (minor 2) until 11 Sep pm; minor 3 `9e7767eb`, then **minor 4 `07f3cb04`**, both synced the same day.
 
 ---
 
@@ -144,8 +154,9 @@ BiSInnervate 3.3.6 — all six at md5 `9af6af04` (minor 2) until 11 Sep pm; mino
 
 BiSTheme = BiSTheme or {}
 local T = BiSTheme
-if (T.CONSOLE_MINOR or 0) >= 3 then return end
-T.CONSOLE_MINOR = 3      -- 3: a toggled slot no longer re-appends itself to the rotation (11 Sep 2026)
+if (T.CONSOLE_MINOR or 0) >= 4 then return end
+T.CONSOLE_MINOR = 4      -- 4: the cursor is its own FontString, blinked by alpha -- the words never move (11 Sep 2026)
+                         -- 3: a toggled slot no longer re-appends itself to the rotation
 
 -- palette fallback: only when this file is embedded and BiSTheme.lua never ran
 if not T.rgb then
@@ -211,9 +222,18 @@ function T.Console(fs, opts)
   w:SetPoint("LEFT", fs, "RIGHT", 0, 0)
   w:SetText("")
   c.words = w
+  -- minor 4: the cursor is a FontString of its own, hung off the words' right
+  -- edge and blinked by ALPHA. Up to minor 3 it was a "_"/" " swapped into the
+  -- words text, and on the client that swap moved the words a hair every half
+  -- second (Arn, on the Healing plate: "Heal_ moves like one space forward").
+  local cur = fs:GetParent():CreateFontString(nil, "OVERLAY")
+  cur:SetFont(STANDARD_TEXT_FONT, opts.size or D.size, "")
+  cur:SetPoint("LEFT", w, "RIGHT", 0, 0)
+  cur:SetText(T.text("ink2", "_"))
+  c.cur = cur
   if fs.GetStringWidth then
     c.promptW = fs:GetStringWidth()
-    w:SetText("_") c.curW = w:GetStringWidth() w:SetText("")
+    c.curW = cur:GetStringWidth()
   end
   c.alpha = 1
   c:Paint()
@@ -221,10 +241,13 @@ function T.Console(fs, opts)
 end
 
 --- The whole line as text (prompt + words + cursor) and its width, for checks.
-function Con:Text() return (self.fs:GetText() or "") .. (self.words:GetText() or "") end
+--- The cursor reads as "_" when lit and " " when blinked off, as it always did.
+function Con:Text()
+  return (self.fs:GetText() or "") .. (self.words:GetText() or "") .. (self.curOn and "_" or " ")
+end
 function Con:Width()
   if not self.fs.GetStringWidth then return 0 end
-  return self.fs:GetStringWidth() + self.words:GetStringWidth()
+  return self.fs:GetStringWidth() + self.words:GetStringWidth() + (self.curW or 0)
 end
 
 --- A standing slot: shown in rotation while it has text. nil clears it.
@@ -311,13 +334,14 @@ function Con:Paint()
   self.words:SetAlpha(a)
   local shown = self.line
   local blink = math.floor(now * 2) % 2 == 0
-  local cur = blink and "_" or " "
+  self.curOn = blink
+  self.cur:SetAlpha(blink and 1 or 0)     -- the cursor blinks; the words stay put
   local words = shown and shown.text or ""
   if self.width and shown then
     -- trim the plain words only (never inside a colour escape); prompt and
     -- cursor keep their own width outside the trim
     words = T.Fit(self.words, words, self.width - (self.curW or 0) - (self.promptW or 0))
   end
-  self.words:SetText((shown and T.text(shown.colour, words) or "") .. cur)
+  self.words:SetText(shown and T.text(shown.colour, words) or "")
 end
 ```
