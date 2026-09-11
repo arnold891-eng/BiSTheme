@@ -40,7 +40,7 @@ local function adv(c, dt) now = now + dt c:Paint() now = now + 0.3 c:Paint() now
 -- 1. embedded copy alone: the palette fallback stands in
 assert(loadfile("Console.lua"))()
 local T = BiSTheme
-ok(T.CONSOLE_MINOR == 2 and T.rgb and T.text, "Console.lua alone brings a palette fallback")
+ok(T.CONSOLE_MINOR == 3 and T.rgb and T.text, "Console.lua alone brings a palette fallback (minor 3)")
 local r, g, b = T.rgb("accent")
 ok(math.abs(r - 0xb9 / 255) < 1e-6, "fallback accent is the BiS purple")
 
@@ -92,6 +92,16 @@ ok(plain(con):find("Summon", 1, true), "round again", plain(con))
 con:Set("stone", nil)
 adv(con, 3)
 ok(plain(con):find("Summon", 1, true), "a cleared slot leaves the rotation", plain(con))
+-- the order quirk (minor 3): clear + set again must not append the key twice. With two
+-- live slots the rotation is exactly Summon, stone, Summon, stone - a duplicate key would
+-- show stone twice in a row and stretch #order every toggle.
+for _ = 1, 5 do con:Set("stone", nil) con:Set("stone", "2 at stone", "good") end
+ok(#con.order == 2, "toggling a slot five times leaves order at 2 keys", #con.order)
+local seen = {}
+for _ = 1, 4 do adv(con, 3) seen[#seen + 1] = plain(con):find("Summon", 1, true) and "S" or "T" end
+ok(table.concat(seen) == "STST" or table.concat(seen) == "TSTS", "and the rotation alternates, no slot hogs it", table.concat(seen))
+con:Set("stone", nil)
+adv(con, 3)
 con:Say("Druid asks", "gold")
 adv(con, 0)
 ok(plain(con):find("Druid asks", 1, true) and con.line.colour == "gold", "Say jumps in, keeps its colour")

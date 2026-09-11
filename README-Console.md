@@ -1,4 +1,4 @@
-# The BiS header — `BiS> _` prompt (`BiSTheme/Console.lua`, CONSOLE_MINOR 2)
+# The BiS header — `BiS> _` prompt (`BiSTheme/Console.lua`, CONSOLE_MINOR 3)
 
 The title of every BiS window is a command prompt. It shows `BiS> ` in accent, then words
 that rotate through what the addon is doing, then a cursor blinking at 2 Hz. Words fade out
@@ -84,19 +84,20 @@ a colour escape.
   same commit as the button) and **a slot that reads a moving value must read an accessor**,
   not a copy taken at load (BiSHealing's shield slot pinned to whoever was shielded at login).
 
-## Known quirk — open, debt #4
+## The order quirk — fixed in minor 3 (11 Sep 2026, debt #4)
 
-`Con:Set(key, nil)` clears the slot but leaves the key in `order`; the next `Set(key, value)`
-sees `slots[key] == nil` and appends the key **again** (line 129), so the rotation collects
-duplicates over a long session. Slots that toggle constantly bleed most (Nebbinator's `N new`,
-`preview`, `auto-reply on`). Fix in canon: check `order` for the key before appending, or
-prune `order` in `Set(nil)`. Then `sync.ps1` to all six embedders, six harnesses green,
-commit each. Cross-addon — Arn's go first.
+Was: `Con:Set(key, nil)` cleared the slot but left the key in `order`; the next
+`Set(key, value)` saw `slots[key] == nil` and appended the key **again**, so a slot that
+toggles (Nebbinator's `N new`, Tools' `asking`) ended up in `order` five or six times and
+hogged the rotation. Now `Set` checks `order` for the key before appending — a key keeps its
+place for good; `Current` already skips cleared keys. Test: toggle a slot five times,
+`#order` stays 2 and the rotation alternates (the old code reads `TTTT`). Synced to every
+embedder with `sync.ps1`; the section below says which.
 
 ## Who wears it (verified on disk 11 Sep 2026)
 
 BiSTools (first, 8 Sep) · Nebbinator 3.1.0 · BiSHealing rc49 · BiSGamba 1.1.0 · BiSJC v4 ·
-BiSInnervate 3.3.6 — all six at md5 `9af6af04`, byte-identical to canon.
+BiSInnervate 3.3.6 — all six at md5 `9af6af04` (minor 2) until 11 Sep pm; minor 3 is `9e7767eb`, synced the same day.
 
 ---
 
@@ -143,8 +144,8 @@ BiSInnervate 3.3.6 — all six at md5 `9af6af04`, byte-identical to canon.
 
 BiSTheme = BiSTheme or {}
 local T = BiSTheme
-if (T.CONSOLE_MINOR or 0) >= 2 then return end
-T.CONSOLE_MINOR = 2
+if (T.CONSOLE_MINOR or 0) >= 3 then return end
+T.CONSOLE_MINOR = 3      -- 3: a toggled slot no longer re-appends itself to the rotation (11 Sep 2026)
 
 -- palette fallback: only when this file is embedded and BiSTheme.lua never ran
 if not T.rgb then
@@ -231,7 +232,13 @@ function Con:Set(key, text, colour)
   if text == nil or text == "" then
     self.slots[key] = nil
   else
-    if not self.slots[key] then self.order[#self.order + 1] = key end
+    -- minor 3: a key keeps its place in the rotation for good. Clearing a slot and
+    -- setting it again used to append the key a second time (the slot was nil, so it
+    -- looked new), and a slot that toggles - Nebbinator's `N new`, Tools' `asking` -
+    -- ended up in `order` five or six times and hogged the rotation.
+    local known = false
+    for _, k in ipairs(self.order) do if k == key then known = true break end end
+    if not known then self.order[#self.order + 1] = key end
     self.slots[key] = { text = tostring(text), colour = colour or "ink" }
   end
   self:Paint()
