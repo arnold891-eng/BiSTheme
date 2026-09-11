@@ -11,6 +11,7 @@ local function FontString()
   function s:GetParent() return parent end
   function s:SetPoint(...) self.point = { ... } end
   function s:SetAlpha(a) self.alpha = a end
+  function s:GetAlpha() return self.alpha or 1 end
   function s:SetFont(_, size) self.size = size end
   function s:SetText(x) self.text = x end
   function s:GetText() return self.text end
@@ -40,7 +41,7 @@ local function adv(c, dt) now = now + dt c:Paint() now = now + 0.3 c:Paint() now
 -- 1. embedded copy alone: the palette fallback stands in
 assert(loadfile("Console.lua"))()
 local T = BiSTheme
-ok(T.CONSOLE_MINOR == 3 and T.rgb and T.text, "Console.lua alone brings a palette fallback (minor 3)")
+ok(T.CONSOLE_MINOR == 4 and T.rgb and T.text, "Console.lua alone brings a palette fallback (minor 4)")
 local r, g, b = T.rgb("accent")
 ok(math.abs(r - 0xb9 / 255) < 1e-6, "fallback accent is the BiS purple")
 
@@ -114,6 +115,14 @@ ok(plain(con):find("Summon", 1, true), "then the slots resume")
 now = now + 0.5 con:Paint() local c1 = plain(con):sub(-1)
 now = now + 0.5 con:Paint() local c2 = plain(con):sub(-1)
 ok((c1 == "_" and c2 == " ") or (c1 == " " and c2 == "_"), "cursor blinks at 2 Hz", c1, c2)
+-- minor 4: the blink is the cursor's OWN FontString going to alpha 0; the words
+-- text is identical in both phases and never carries the "_" -- a swap inside
+-- the words moved them a hair on the client every half second
+now = now + 0.5 con:Paint() local w1, a1 = con.words:GetText(), con.cur:GetAlpha()
+now = now + 0.5 con:Paint() local w2, a2 = con.words:GetText(), con.cur:GetAlpha()
+ok(w1 == w2 and not w1:find("_", 1, true), "the words never change between blink phases", w1, w2)
+ok((a1 == 0 and a2 == 1) or (a1 == 1 and a2 == 0), "the cursor FontString blinks by alpha", a1, a2)
+ok(con.cur:GetText():find("_", 1, true) ~= nil, "the cursor FontString holds the underscore")
 con:Say("Averyveryverylongname accepted the summon")
 adv(con, 0)
 ok(con:Width() <= 106 and plain(con):find("%.%.%.[_ ]$"), "a long line is trimmed and the cursor survives", plain(con))
