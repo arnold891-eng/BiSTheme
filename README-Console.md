@@ -1,0 +1,316 @@
+# The BiS header — `BiS> _` prompt (`BiSTheme/Console.lua`, CONSOLE_MINOR 2)
+
+The title of every BiS window is a command prompt. It shows `BiS> ` in accent, then words
+that rotate through what the addon is doing, then a cursor blinking at 2 Hz. Words fade out
+and in — never a hard cut. Nothing the addon says about itself goes to chat any more; chat is
+for `/slash` answers only.
+
+    BiS> Summon_          →  BiS> 2 at stone_          →  BiS> Druid asks_
+
+Arn, 8 Sep 2026: *"prompt `BiS> _` blinking should be in the header and cycle relevant
+messages, addon name, summoners at the stone, receiving summon, requesting summon, etc."*
+Innervate's rotating `▼2 online` title was the ancestor.
+
+## Two kinds of text
+
+| | what | how long | example |
+|---|---|---|---|
+| **slot** | state that lasts | rotates every `cycle` (3 s) while it has text | `Summon` · `2 at stone` · `requesting...` · `preview - nothing sends` |
+| **say** | an event | jumps the queue, holds `hold` (3 s), then slots resume; several queue up | `Druid asks` · `X accepted` · `request now` · `stone learned` |
+
+Slot 1 is always the addon's name in `accent`. Clear a slot with `nil` the moment the state
+ends. Colour by meaning, palette names only: `good` counts/yes, `gold` asks/"mine", `warn`
+declines, `muted` going quiet, `ink2` plain.
+
+## API
+
+```lua
+local con = BiSTheme.Console(titleFontString, { width = 106 })   -- opts: width, size, cycle, hold, fade
+con:Set("name",  "Summon", "accent")        -- slot; nil or "" clears it
+con:Set("stone", "2 at stone", "good")
+con:Say("Druid asks", "gold")               -- event line
+con:Paint()                                 -- from a ~0.2 s ticker: blink, rotate, fade, expire
+con:Clear()                                 -- drops the QUEUE, not the line showing
+con.line                                    -- { text, colour } on screen right now
+con:Text()  con:Width()                     -- prompt + words + cursor, for asserts
+BiSTheme.Fit(fs, text, width)               -- trim with "..." until GetStringWidth fits
+BiSTheme.CONSOLE = { cycle = 3, hold = 3, fade = 0.25, size = 8, prompt = "BiS> " }
+```
+
+The console makes **one extra FontString** for the words, anchored `LEFT` of the title's
+`RIGHT`, so the words fade on their own while `BiS> ` stands still. `Fit` trims the plain
+words only, then wraps prompt, colour and cursor around what survived — it never cuts inside
+a colour escape.
+
+## Adopting it in a window — five steps
+
+1. Copy `BiSTheme/Console.lua` → `<Addon>/Libs/BiSTheme/Console.lua` **byte-identical**
+   (md5 `9af6af04…` today). First TOC line. `_bisdev/sync.ps1` keeps it in step; never edit
+   the copy — change canon, sync out.
+2. Header layout: `4 + prompt … | buttons at −3 / −17 / −38` (12×12 boxes). No logo, no pin.
+   Prompt width = `W − strip − 8`. **Write the arithmetic as a comment where the number is
+   set** — `486 − 316 = 158 clear, held 148` is checkable a year later; `width = 148` is not.
+3. Code:
+   ```lua
+   local title = K.fs(head, "", 8, "ink")  title:SetPoint("LEFT", head, "LEFT", 4, 0)
+   NS.con = BiSTheme.Console(title, { width = W - 56 - 8 })
+   NS.con:Set("name", "Nebbinator", "accent")
+   -- state → con:Set(key, text|nil, colour)   events → con:Say(text, colour)
+   -- ticker 0.1–0.2 s while shown → NS.con:Paint()
+   ```
+   Route every window-side print through `Say`; keep `NS.Print` for slash replies. A toggle
+   with two callers: **the function does the work and says it in the prompt; the slash
+   handler adds the chat line** — else every click announces twice.
+4. Resolve the theme **per call, per colour name** (`_G.BiSTheme` at call time), never at
+   file load — addons sorting before `BiSTheme` alphabetically capture nil and run on the
+   inline fallback forever, invisibly.
+5. Harness asserts (below). Mutation-test each one before believing it.
+
+## Testing a console without a screen (four traps, all paid for)
+
+- **Step the clock in 0.05 s slices, never whole seconds.** One 3 s jump expires a `Say`
+  before it is ever drawn; the test reads "event never showed" when the console is fine.
+- **Assert the fade as ≥3 frames strictly between 0 and 1.** "Lowest alpha was 0" also passes
+  a hard cut. Set `fade = 0.0001` and the test must go red.
+- **Mock FontString** needs `GetParent`, `SetAlpha`, `SetFont` that records the size, and
+  `GetStringWidth` that strips colour escapes and scales by that size — or the budget assert
+  measures `|cffb980ff` and lies.
+- **Load Console.lua the TOC way**, not the fallback branch. With BiSTheme absent the file
+  installs its own palette into `_G.BiSTheme`, so "no theme installed" must gate on how the
+  run was launched, not on whether the global exists. Run the whole suite a second time with
+  a wrong-on-purpose accent (`dev/theme.lua`, `#ff0000`) — only a wrong palette proves the real
+  one is read.
+- Plus: **count frames parented to the header** (one button, one frame; move the number in the
+  same commit as the button) and **a slot that reads a moving value must read an accessor**,
+  not a copy taken at load (BiSHealing's shield slot pinned to whoever was shielded at login).
+
+## Known quirk — open, debt #4
+
+`Con:Set(key, nil)` clears the slot but leaves the key in `order`; the next `Set(key, value)`
+sees `slots[key] == nil` and appends the key **again** (line 129), so the rotation collects
+duplicates over a long session. Slots that toggle constantly bleed most (Nebbinator's `N new`,
+`preview`, `auto-reply on`). Fix in canon: check `order` for the key before appending, or
+prune `order` in `Set(nil)`. Then `sync.ps1` to all six embedders, six harnesses green,
+commit each. Cross-addon — Arn's go first.
+
+## Who wears it (verified on disk 11 Sep 2026)
+
+BiSTools (first, 8 Sep) · Nebbinator 3.1.0 · BiSHealing rc49 · BiSGamba 1.1.0 · BiSJC v4 ·
+BiSInnervate 3.3.6 — all six at md5 `9af6af04`, byte-identical to canon.
+
+---
+
+## Source — `BiSTheme/Console.lua` as on disk
+
+```lua
+--[[
+  BiSTheme / Console.lua  --  the "BiS> _" prompt every BiS window carries in its header.
+
+  Arn, 8 Sep 2026: "prompt `BiS> _` blinking should be in the header and cycle
+  relevant messages: addon name, summoners at the stone, receiving summon,
+  requesting summon, etc." Chat stays clean: what the addon is doing is said
+  here, not in the chat frame. Chat is for /slash answers only.
+
+  The title FontString of the window IS the console. It shows
+
+      BiS> <text>_            cursor blinking at 2 Hz
+
+  The words fade out and the next ones fade in (Arn: "fade in and out animations,
+  not hard cuts"); the `BiS> ` prompt itself never moves. The console makes one
+  extra FontString for the words, anchored to the right of the title.
+
+  where <text> is either a standing SLOT (the addon's name, "2 at stone",
+  "requesting...") - the slots rotate every `cycle` seconds - or a transient
+  line pushed with Say ("Druid asks", "Druid accepted"), which jumps the queue,
+  holds for `hold` seconds, then the rotation resumes.
+
+  Usage from any addon:
+
+      local con = BiSTheme.Console(titleFontString, { width = 110, size = 8 })
+      con:Set("name", "Summon")                 -- slot 1: always the addon's name
+      con:Set("stone", "2 at stone", "good")    -- a state slot; nil text clears it
+      con:Say("Druid asks", "gold")             -- an event line, shown once
+      con:Paint()                               -- from a ~0.2 s ticker: blink, rotate, expire
+
+  Slots rotate in the order they were first Set. Pick words that fit the box:
+  T.Fit trims with an ellipsis as the net, not the plan.
+
+  Self-guarded like LibBiSComm: an addon may ship a copy under Libs\BiSTheme\ so
+  the prompt works without BiSTheme installed. Newest CONSOLE_MINOR wins; the
+  canonical file lives in the BiSTheme addon and is copied out, never edited in
+  place. If BiSTheme itself is absent the palette falls back inline.
+]]
+
+BiSTheme = BiSTheme or {}
+local T = BiSTheme
+if (T.CONSOLE_MINOR or 0) >= 2 then return end
+T.CONSOLE_MINOR = 2
+
+-- palette fallback: only when this file is embedded and BiSTheme.lua never ran
+if not T.rgb then
+  local FALLBACK = {
+    bg = "121020", surface = "1a1730", sunken = "221d3c", line = "2a2446",
+    line2 = "3a3260", ink = "ece8f6", ink2 = "c6bedd", muted = "968ead",
+    accent = "b980ff", accentSoft = "2c2148", good = "4fd0cf", warn = "f08cb0",
+    gold = "e5c04a", slate = "8fb4d6", dim = "8e86a6",
+  }
+  T.hex = T.hex or FALLBACK
+  local cache = {}
+  function T.rgb(name)
+    local hex = T.hex[name] or T.hex.ink
+    local c = cache[hex]
+    if c then return c[1], c[2], c[3] end
+    c = { tonumber(hex:sub(1, 2), 16) / 255, tonumber(hex:sub(3, 4), 16) / 255, tonumber(hex:sub(5, 6), 16) / 255 }
+    cache[hex] = c
+    return c[1], c[2], c[3]
+  end
+  function T.rgba(name, a) local r, g, b = T.rgb(name) return r, g, b, a or 1 end
+  function T.text(name, s) return "|cff" .. (T.hex[name] or T.hex.ink) .. tostring(s) .. "|r" end
+end
+
+-- defaults; an addon may override per console through opts
+T.CONSOLE = {
+  cycle  = 3,       -- seconds a standing slot shows before the next one
+  hold   = 3,       -- seconds a Say line holds before the rotation resumes
+  fade   = 0.25,    -- seconds to fade the words out, and again to fade the next in
+  size   = 8,       -- font size of the words (the title's own size is the caller's)
+  prompt = "BiS> ",
+}
+
+--- A label must fit its box: shrink with an ellipsis until GetStringWidth says so.
+--- (Arn, 8 Sep: "summon requested - click to cancel" ran into the "all" button.)
+--- Pick text that fits outright; the ellipsis is the net, not the plan.
+function T.Fit(fs, text, width)
+  fs:SetText(text)
+  if not width or not fs.GetStringWidth then return text end
+  local t = text
+  while fs:GetStringWidth() > width and #t > 1 do
+    t = t:sub(1, -2)
+    fs:SetText(t .. "...")
+  end
+  return fs:GetText()
+end
+
+local Con = {}
+Con.__index = Con
+
+--- Wrap a FontString (the window's title) as the prompt. The title keeps "BiS> ";
+--- the words live in a second FontString to its right so they can fade on their own.
+function T.Console(fs, opts)
+  opts = opts or {}
+  local D = T.CONSOLE
+  local c = setmetatable({}, Con)
+  c.fs, c.width = fs, opts.width
+  c.cycle, c.hold, c.fadeT = opts.cycle or D.cycle, opts.hold or D.hold, opts.fade or D.fade
+  c.slots, c.order, c.queue = {}, {}, {}
+  c.idx, c.since = 1, GetTime()
+  fs:SetText(T.text("accent", D.prompt))
+  local w = fs:GetParent():CreateFontString(nil, "OVERLAY")
+  w:SetFont(STANDARD_TEXT_FONT, opts.size or D.size, "")
+  w:SetPoint("LEFT", fs, "RIGHT", 0, 0)
+  w:SetText("")
+  c.words = w
+  if fs.GetStringWidth then
+    c.promptW = fs:GetStringWidth()
+    w:SetText("_") c.curW = w:GetStringWidth() w:SetText("")
+  end
+  c.alpha = 1
+  c:Paint()
+  return c
+end
+
+--- The whole line as text (prompt + words + cursor) and its width, for checks.
+function Con:Text() return (self.fs:GetText() or "") .. (self.words:GetText() or "") end
+function Con:Width()
+  if not self.fs.GetStringWidth then return 0 end
+  return self.fs:GetStringWidth() + self.words:GetStringWidth()
+end
+
+--- A standing slot: shown in rotation while it has text. nil clears it.
+function Con:Set(key, text, colour)
+  if text == nil or text == "" then
+    self.slots[key] = nil
+  else
+    if not self.slots[key] then self.order[#self.order + 1] = key end
+    self.slots[key] = { text = tostring(text), colour = colour or "ink" }
+  end
+  self:Paint()
+end
+
+--- An event line: jumps the rotation, holds `hold` seconds, then the slots resume.
+--- Several in a row queue up and show one after the other.
+function Con:Say(text, colour)
+  local q = self.queue
+  q[#q + 1] = { text = tostring(text), colour = colour or "ink2" }
+  self:Paint()
+end
+
+function Con:Clear()
+  self.queue = {}
+  self:Paint()
+end
+
+-- the slot in rotation right now, skipping cleared keys
+function Con:Current(now)
+  local live = {}
+  for _, k in ipairs(self.order) do if self.slots[k] then live[#live + 1] = self.slots[k] end end
+  if #live == 0 then return nil end
+  if now - self.since >= self.cycle then
+    self.idx = self.idx + 1
+    self.since = now
+  end
+  if self.idx > #live then self.idx = 1 end
+  return live[self.idx]
+end
+
+--- Blink the cursor, rotate the slots, expire the said line. Call from a ticker.
+function Con:Paint()
+  local now = GetTime()
+  local line
+  if self.saying then
+    if now - self.saidAt >= self.hold then
+      self.saying = nil
+      self.since = now   -- the slot after a Say gets its full cycle
+    else
+      line = self.saying
+    end
+  end
+  if not line and #self.queue > 0 then
+    self.saying = table.remove(self.queue, 1)
+    self.saidAt = now
+    line = self.saying
+  end
+  if not line then line = self:Current(now) end
+  -- fade: the words on screen go to 0 over fadeT, the new words come up from 0
+  local same = (line == nil and self.line == nil) or
+    (line and self.line and line.text == self.line.text and line.colour == self.line.colour)
+  if not same and self.fading ~= "out" then
+    self.fading, self.fadeAt = "out", now
+  end
+  local a = 1
+  if self.fadeAt and self.fadeAt > now then self.fadeAt = now end   -- a clock that moved back
+  if self.fading == "out" then
+    a = 1 - (now - self.fadeAt) / self.fadeT
+    if a <= 0 then
+      a = 0
+      self.line = line
+      self.fading, self.fadeAt = "in", now
+    end
+  elseif self.fading == "in" then
+    a = (now - self.fadeAt) / self.fadeT
+    if a >= 1 then a = 1 self.fading = nil end
+  end
+  self.alpha = a
+  self.words:SetAlpha(a)
+  local shown = self.line
+  local blink = math.floor(now * 2) % 2 == 0
+  local cur = blink and "_" or " "
+  local words = shown and shown.text or ""
+  if self.width and shown then
+    -- trim the plain words only (never inside a colour escape); prompt and
+    -- cursor keep their own width outside the trim
+    words = T.Fit(self.words, words, self.width - (self.curW or 0) - (self.promptW or 0))
+  end
+  self.words:SetText((shown and T.text(shown.colour, words) or "") .. cur)
+end
+```
