@@ -1,4 +1,4 @@
-## Interface: 20506
+## Interface: 20506, 16001
 ## Title: BiS Theme
 ## Notes: Shared colour palette, the BiS> header prompt, and the options window for the BiS* addons. Load first; other addons list it under OptionalDeps.
 ## Author: Kumlust
