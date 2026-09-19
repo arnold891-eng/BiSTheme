@@ -8,3 +8,4 @@
 BiSTheme.lua
 Console.lua
 Options.lua
+Minimap.lua
