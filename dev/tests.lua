@@ -185,6 +185,7 @@ do
   end
   _G.CreateFrame = function(kind, name, par) return Frame(kind, name, par) end
   _G.Minimap = Frame("Frame", "Minimap")
+  _G.Minimap.w = 192            -- NOT the 140 px every minimap button assumes (see Radius)
   _G.UIParent = Frame("Frame", "UIParent")
   _G.UIParent.w = 1024
   _G.UIParent.GetEffectiveScale = function() return 1 end
@@ -219,9 +220,17 @@ do
                                 onRight = function() ran.options2 = true end })
   ok(b ~= nil, "the button is built")
   local pt = b.points[#b.points]
-  local want = T.MINIMAP.RADIUS * math.cos(math.rad(T.MINIMAP.ANGLE))
+  -- The ring is MEASURED off this minimap, not assumed to be the usual 80: a client with a wider
+  -- minimap put the button inside the map, where every other addon's button sat on the edge.
+  local radius = 192 / 2 + T.MINIMAP.OVER
+  ok(b:Radius() == radius, "the ring is measured off the minimap, not hard-coded", b:Radius())
+  ok(radius > T.MINIMAP.RADIUS, "which on a wide minimap is further out than the old 80")
+  local want = radius * math.cos(math.rad(T.MINIMAP.ANGLE))
   ok(pt and pt[1] == "CENTER" and math.abs(pt[4] - want) < 0.01,
      "a fresh install puts it at the default angle on the minimap's edge")
+  _G.Minimap.w = 0
+  ok(b:Radius() == T.MINIMAP.RADIUS, "and a minimap that cannot say how wide it is falls back")
+  _G.Minimap.w = 192
 
   -- dragging writes the angle into the addon's db, so a reload finds it again
   b.Follow(b)
