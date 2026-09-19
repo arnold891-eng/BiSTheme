@@ -241,6 +241,13 @@ do
   ok(db.hide == true and b:IsShown() == false, "SetHidden hides it AND remembers")
   b:SetHidden(false)
 
+  -- HOVERING IT. Two lines of script nothing had ever run: going round dropped the square face's
+  -- border and both of them still reached for it, so the button threw twice a second under the
+  -- cursor. A frame's scripts are code, and code a suite never calls is code nobody has read.
+  ok(pcall(b.scripts.OnEnter, b), "hovering the button does not throw")
+  ok(pcall(b.scripts.OnLeave, b), "and neither does leaving it")
+  ok(b.ring ~= nil and b.icon ~= nil, "it wears the ring and an icon")
+
   -- the menu
   local menu = b:OpenMenu()
   ok(menu:IsShown() and menu.count == 4, "left-clicking opens a menu with every row")
