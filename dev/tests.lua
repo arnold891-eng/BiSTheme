@@ -25,7 +25,29 @@ local function FontString()
   return s
 end
 parent = { CreateFontString = function() return FontString() end }
-_G.CreateFrame = function() return { SetBackdrop = function() end, SetBackdropColor = function() end, SetBackdropBorderColor = function() end } end
+-- A FRAME LISTENS. The stub had three backdrop methods and nothing else, so a library that wants
+-- to hear PLAYER_LOGIN - which is the only moment EllesmereUI can be asked for anything - could
+-- not be written without the file failing to load. It records what it was asked to listen for,
+-- and dev/tests can fire it.
+local LOADED_FRAMES = {}
+_G.CreateFrame = function()
+  local f = {
+    SetBackdrop = function() end, SetBackdropColor = function() end,
+    SetBackdropBorderColor = function() end,
+    _events = {}, _scripts = {},
+  }
+  function f:RegisterEvent(e) self._events[e] = true end
+  function f:UnregisterEvent(e) self._events[e] = nil end
+  function f:SetScript(k, fn) self._scripts[k] = fn end
+  function f:GetScript(k) return self._scripts[k] end
+  LOADED_FRAMES[#LOADED_FRAMES + 1] = f
+  return f
+end
+local function fireEvent(event, ...)
+  for _, f in ipairs(LOADED_FRAMES) do
+    if f._events[event] and f._scripts.OnEvent then f._scripts.OnEvent(f, event, ...) end
+  end
+end
 
 local n, fails = 0, 0
 local function ok(c, msg, ...)
@@ -276,6 +298,67 @@ do
   b:Click("RightButton")
   ok(ran.options2 == true, "right-clicking runs the options window directly")
   ok(menu:IsShown() == false, "and does not leave the menu open behind it")
+end
+
+-- ------------------------------------------------------------------------------------------
+-- HARMONISING WITH EllesmereUI. Arn installed it (28 Sep 2026) and asked what it takes to match.
+-- We take two things through their documented getters - the accent the user chose, and the UI
+-- font - and hand over no frames at all, because S.Shell would alpha out this window's own
+-- background and borders and leave its rows untouched.
+--
+-- THE FAKE IS SHAPED LIKE THEIRS: RegisterSkin takes a name and a callback, refuses a second
+-- registration under the same name, hands the callback a facade, and dispatches at PLAYER_LOGIN.
+do
+  local ownAccent = T.hex.accent
+  local registered, fired, listeners = {}, 0, {}
+  local accent = { 0.2, 0.8, 0.4 }                       -- a green user, deliberately not ours
+  _G.EllesmereUI = {
+    RegisterSkin = function(name, fn)
+      if registered[name] then return end                 -- first registration wins, as theirs does
+      registered[name] = fn
+      return true
+    end,
+  }
+  local function dispatch()
+    for _, fn in pairs(registered) do
+      fired = fired + 1
+      fn({
+        apiVersion = 1,
+        GetAccentColor = function() return accent[1], accent[2], accent[3] end,
+        GetFont = function() return "Interface\AddOns\EllesmereUI\media\font.ttf", "" end,
+        OnLooksChanged = function(fn2) listeners[#listeners + 1] = fn2 end,
+        IsEnabled = function() return true end,
+      })
+    end
+  end
+
+  ok(T.AdoptEllesmereUI() == true, "BiSTheme registers with EllesmereUI when it is there")
+  ok(T.hex.accent == ownAccent, "and changes nothing until the callback runs")
+  dispatch()
+  ok(fired == 1, "the callback runs once")
+  ok(T.hex.accent == "33cc66", "the accent becomes the user's own", T.hex.accent)
+  local r, g, b = T.rgb("accent")
+  ok(math.abs(r - 0.2) < 0.01 and math.abs(g - 0.8) < 0.01,
+     "and every colour lookup follows it, cache and all", r .. "," .. g .. "," .. b)
+  ok(T.FONT and T.FONT:find("EllesmereUI", 1, true), "the font is theirs too", tostring(T.FONT))
+
+  -- LIVE. Their guidelines say not to cache the getters: the user moves a slider mid-session.
+  accent = { 1, 0.5, 0 }
+  local repainted = false
+  T.RegisterLooks(function() repainted = true end)
+  for _, fn in ipairs(listeners) do fn() end
+  ok(T.hex.accent == "ff8000", "moving their accent slider moves ours", T.hex.accent)
+  ok(repainted, "and anything that drew itself in the old colour is told to draw again")
+
+  -- A FONT THE CLIENT WILL NOT TAKE is worse than an ugly one: a FontString whose SetFont failed
+  -- draws nothing at all. So the path is tried, and the client's own is the fallback.
+  local fs = { SetFont = function(_, path) if path ~= STANDARD_TEXT_FONT then error("no such font", 2) end end }
+  ok(T.SetFont(fs, 9) == STANDARD_TEXT_FONT,
+     "a font path the client refuses falls back rather than leaving a blank label")
+
+  -- and with EllesmereUI absent, nothing about any of this runs
+  _G.EllesmereUI = nil
+  ok(T.AdoptEllesmereUI() == false, "with EllesmereUI gone, BiSTheme keeps its own look")
 end
 
 if fails > 0 then error(fails .. " failed of " .. n) end

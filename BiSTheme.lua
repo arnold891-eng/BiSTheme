@@ -116,3 +116,109 @@ function T.skin(frame, borderName)
   frame:SetBackdropColor(T.rgba("surface", 0.96))
   frame:SetBackdropBorderColor(T.rgb(borderName or "line2"))
 end
+
+-- =========================================================================
+-- HARMONISING WITH EllesmereUI (28 Sep 2026)
+--
+-- Arn installed EllesmereUI 9.3 and asked what it takes to match it. Its
+-- SKINNING_API.md offers two doors, and this is deliberately the smaller one.
+--
+-- The big door is S.Shell(frame): it alphas out every texture on the frame and
+-- paints EUI's own backdrop underneath. That works on Blizzard-shaped windows,
+-- whose contents are Blizzard widgets EUI also skins. Ours are not: the
+-- background and the four borders sit on the frame (Options.lua), while the
+-- header, the rows and the switches are child frames with their own art. Shell
+-- would erase the first and leave the rest - EUI's backdrop behind BiSTheme's
+-- innards - and BiS Healing would stop looking like the other six addons for
+-- EUI users only.
+--
+-- The small door is the getters, which their own guidelines point at for
+-- "custom elements you coloured yourself". We keep our shape and take two
+-- things from the user's own settings: the accent they chose, and the UI font.
+-- Our windows then sit BESIDE EUI's rather than pretending to be them.
+--
+-- IT GOES THROUGH RegisterSkin ANYWAY, even though no frame is handed over,
+-- because that is what respects the user's own switch: EUI lets them turn
+-- third-party skinning off per addon, and a callback that never runs is a
+-- family that keeps its own purple. Reading the getters directly would work
+-- and would ignore them.
+-- =========================================================================
+
+T.FONT = nil          -- the user's UI font while EUI is lending it; nil means the client's own
+
+--- Things to redraw when the look changes under them. A window built before the
+--- user moved EUI's accent slider is a window with the old purple in its textures.
+local looksListeners = {}
+
+function T.RegisterLooks(fn)
+  if type(fn) ~= "function" then return false end
+  looksListeners[#looksListeners + 1] = fn
+  return true
+end
+
+function T.LooksChanged()
+  for i = 1, #looksListeners do pcall(looksListeners[i]) end
+  return #looksListeners
+end
+
+local function toHex(r, g, b)
+  if type(r) ~= "number" or type(g) ~= "number" or type(b) ~= "number" then return nil end
+  return ("%02x%02x%02x"):format(
+    math.floor(r * 255 + 0.5), math.floor(g * 255 + 0.5), math.floor(b * 255 + 0.5))
+end
+T.toHex = toHex
+
+--- Take the accent and the font from EllesmereUI, if it is there and the user
+--- allows it. Answers true when the registration was accepted - not that it has
+--- run, which happens at PLAYER_LOGIN.
+function T.AdoptEllesmereUI()
+  if not (EllesmereUI and EllesmereUI.RegisterSkin) then return false, "no EllesmereUI" end
+  T.ownAccent = T.ownAccent or T.hex.accent            -- to give back if it is ever switched off
+  local accepted = EllesmereUI.RegisterSkin("BiSTheme", function(S)
+    local function adopt()
+      -- NOT CACHED ACROSS THE SESSION, per their guidelines: the accent and the
+      -- font are live settings, and OnLooksChanged is how we hear about a change.
+      -- WRITTEN OUT, NOT `S.f and S.f()`. That idiom is not a multi-value context: it keeps the
+      -- FIRST return and drops the rest, so toHex got the red and two nils and the accent never
+      -- moved. Third time this trap has cost us something - the header's regen number (23 Sep),
+      -- the cells row's colour (26 Sep), and now this.
+      local r, g, b
+      if S.GetAccentColor then r, g, b = S.GetAccentColor() end
+      local hex = toHex(r, g, b)
+      if hex then T.hex.accent = hex end
+      local path
+      if S.GetFont then path = S.GetFont() end
+      T.FONT = (type(path) == "string" and path ~= "") and path or nil
+      T.adopted = true
+      T.LooksChanged()
+    end
+    adopt()
+    if S.OnLooksChanged then S.OnLooksChanged(adopt) end
+  end)
+  return accepted and true or false
+end
+
+--- The font a BiS window draws with: the user's while EUI is lending one, ours
+--- otherwise. Handed a FontString it does the SetFont too, and falls back when
+--- the path is refused - a FontString whose SetFont failed draws NOTHING, which
+--- would be an invisible label rather than an ugly one.
+function T.SetFont(fs, size, flags)
+  local ok = false
+  if T.FONT and fs and fs.SetFont then
+    ok = pcall(fs.SetFont, fs, T.FONT, size, flags or "")
+  end
+  if not ok and fs and fs.SetFont then fs:SetFont(STANDARD_TEXT_FONT, size, flags or "") end
+  return ok and T.FONT or STANDARD_TEXT_FONT
+end
+
+-- WHEN. BiSTheme loads before EllesmereUI - B before E - so the global is not there yet at file
+-- scope, and asking then would answer "no EllesmereUI" on a machine that has it. PLAYER_LOGIN is
+-- after every addon has loaded, and is also when EUI dispatches the callbacks it has queued.
+do
+  local f = CreateFrame("Frame")
+  f:RegisterEvent("PLAYER_LOGIN")
+  f:SetScript("OnEvent", function()
+    T.AdoptEllesmereUI()
+  end)
+  T.looksFrame = f
+end
