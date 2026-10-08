@@ -1,4 +1,4 @@
-# The BiS header — `BiS> _` prompt (`BiSTheme/Console.lua`, CONSOLE_MINOR 4)
+# The BiS header — `BiS> _` prompt (`BiSTheme/Console.lua`, CONSOLE_MINOR 5)
 
 The title of every BiS window is a command prompt. It shows `BiS> ` in accent, then words
 that rotate through what the addon is doing, then a cursor blinking at 2 Hz. Words fade out
@@ -104,6 +104,16 @@ never carries it and never changes between phases. `Text()` still reads `…_` /
 every existing assert holds. Test: paint two phases, `words:GetText()` identical and free of
 `_`, `cur:GetAlpha()` alternating 1/0. Synced to every embedder the same day.
 
+## The per-frame cost — fixed in minor 5 (7 Oct 2026, the cost pass)
+
+Was: every `Paint` set the words and measured them, and an overflowing line was trimmed a
+character at a time with a `SetText` and a `GetStringWidth` for each - and three windows
+(BiSGamba, BiSGuild, the minimap menu) paint every frame. A second of frames on one long line
+was 2,640 sets and 2,580 measures. Now `Paint` keeps the drawn line's key (room, colour as
+drawn, text) in `self.painted` and returns before touching the words when it has not changed;
+the fade alpha and the cursor blink still run every paint. Test: sixty frames, same words, zero
+sets and zero measures, and a `Cost.Count` budget of one client call a frame.
+
 ## Who wears it (verified on disk 11 Sep 2026)
 
 BiSTools (first, 8 Sep) · Nebbinator 3.1.0 · BiSHealing rc49 · BiSGamba 1.1.0 · BiSJC v4 ·
@@ -154,8 +164,9 @@ BiSInnervate 3.3.6 — all six at md5 `9af6af04` (minor 2) until 11 Sep pm; mino
 
 BiSTheme = BiSTheme or {}
 local T = BiSTheme
-if (T.CONSOLE_MINOR or 0) >= 4 then return end
-T.CONSOLE_MINOR = 4      -- 4: the cursor is its own FontString, blinked by alpha -- the words never move (11 Sep 2026)
+if (T.CONSOLE_MINOR or 0) >= 5 then return end
+T.CONSOLE_MINOR = 5      -- 5: Paint sets and measures the words only when they change (7 Oct 2026, the cost pass)
+                         -- 4: the cursor is its own FontString, blinked by alpha -- the words never move (11 Sep 2026)
                          -- 3: a toggled slot no longer re-appends itself to the rotation
 
 -- palette fallback: only when this file is embedded and BiSTheme.lua never ran
@@ -218,7 +229,10 @@ function T.Console(fs, opts)
   c.idx, c.since = 1, GetTime()
   fs:SetText(T.text("accent", D.prompt))
   local w = fs:GetParent():CreateFontString(nil, "OVERLAY")
-  w:SetFont(STANDARD_TEXT_FONT, opts.size or D.size, "")
+  -- THE USER'S FONT WHEN ONE IS LENT. T.SetFont is BiSTheme's, and falls back to the client's own
+  -- when there is no lender or the path is refused - a FontString whose SetFont failed draws
+  -- nothing at all, which is an invisible label rather than an ugly one.
+  if T.SetFont then T.SetFont(w, opts.size or D.size) else w:SetFont(STANDARD_TEXT_FONT, opts.size or D.size, "") end
   w:SetPoint("LEFT", fs, "RIGHT", 0, 0)
   w:SetText("")
   c.words = w
@@ -227,7 +241,7 @@ function T.Console(fs, opts)
   -- words text, and on the client that swap moved the words a hair every half
   -- second (Arn, on the Healing plate: "Heal_ moves like one space forward").
   local cur = fs:GetParent():CreateFontString(nil, "OVERLAY")
-  cur:SetFont(STANDARD_TEXT_FONT, opts.size or D.size, "")
+  if T.SetFont then T.SetFont(cur, opts.size or D.size) else cur:SetFont(STANDARD_TEXT_FONT, opts.size or D.size, "") end
   cur:SetPoint("LEFT", w, "RIGHT", 0, 0)
   cur:SetText(T.text("ink2", "_"))
   c.cur = cur
@@ -336,11 +350,19 @@ function Con:Paint()
   local blink = math.floor(now * 2) % 2 == 0
   self.curOn = blink
   self.cur:SetAlpha(blink and 1 or 0)     -- the cursor blinks; the words stay put
+  -- ONLY WHEN IT CHANGED (7 Oct 2026, the cost pass). Three windows paint this every frame, and
+  -- each paint set the text, measured it, and - when it overflowed - trimmed a character at a
+  -- time with a SetText and a measure for each. The words change every few seconds; the alpha
+  -- above is all a frame needs. The key holds the colour as drawn, so a theme change repaints.
+  local room = self.width and (self.width - (self.curW or 0) - (self.promptW or 0)) or 0
+  local key = shown and (room .. "\1" .. T.text(shown.colour, shown.text)) or ""
+  if key == self.painted then return end
+  self.painted = key
   local words = shown and shown.text or ""
   if self.width and shown then
     -- trim the plain words only (never inside a colour escape); prompt and
     -- cursor keep their own width outside the trim
-    words = T.Fit(self.words, words, self.width - (self.curW or 0) - (self.promptW or 0))
+    words = T.Fit(self.words, words, room)
   end
   self.words:SetText(shown and T.text(shown.colour, words) or "")
 end

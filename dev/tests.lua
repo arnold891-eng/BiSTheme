@@ -63,7 +63,7 @@ local function adv(c, dt) now = now + dt c:Paint() now = now + 0.3 c:Paint() now
 -- 1. embedded copy alone: the palette fallback stands in
 assert(loadfile("Console.lua"))()
 local T = BiSTheme
-ok(T.CONSOLE_MINOR == 4 and T.rgb and T.text, "Console.lua alone brings a palette fallback (minor 4)")
+ok(T.CONSOLE_MINOR == 5 and T.rgb and T.text, "Console.lua alone brings a palette fallback (minor 5)")
 local r, g, b = T.rgb("accent")
 ok(math.abs(r - 0xb9 / 255) < 1e-6, "fallback accent is the BiS purple")
 
@@ -86,6 +86,35 @@ local fs = FontString() fs:SetFont(nil, 8)
 ok(T.Fit(fs, "short", 100) == "short", "Fit leaves a fitting label alone")
 local t = T.Fit(fs, "a label far too long for its little box", 40)
 ok(t:find("%.%.%.$") and fs:GetStringWidth() <= 40, "Fit trims with an ellipsis until it fits", t)
+
+-- 3b. A FRAME'S PAINT IS NEARLY FREE (7 Oct 2026, the cost pass). Three windows paint the prompt
+-- every frame; each paint set the words and measured them, and an overflowing line was trimmed a
+-- character at a time - a SetText and a measure each. A second of frames with nothing new to say
+-- must not touch the words at all.
+do
+  local hd = FontString() hd:SetFont(nil, 8)
+  local c = T.Console(hd, { width = 60 })
+  c:Set("k", "a line much too long for a sixty pixel prompt", "ink")
+  for _ = 1, 10 do now = now + 0.1 c:Paint() end         -- faded in, trimmed once
+  local sets, measures = 0, 0
+  local realSet, realW = c.words.SetText, c.words.GetStringWidth
+  c.words.SetText = function(s, x) sets = sets + 1 return realSet(s, x) end
+  c.words.GetStringWidth = function(s) measures = measures + 1 return realW(s) end
+  -- the family's counter (_bisdev/dev/cost.lua) holds the client side of the same second: the
+  -- clock, once a paint, and nothing else
+  local Cost = dofile("../_bisdev/dev/cost.lua")
+  local asked, by = Cost.Count(function()
+    for _ = 1, 60 do now = now + 1 / 60 c:Paint() end
+  end)
+  ok(asked <= 60, "a second of prompt paints asks the client one thing a frame at most: " .. asked,
+     Cost.Top(by, 3))
+  c.words.SetText, c.words.GetStringWidth = realSet, realW
+  ok(sets == 0 and measures == 0, "sixty frames with the same words set and measure nothing",
+     sets .. " sets, " .. measures .. " measures")
+  c:Set("k", "short", "good")
+  for _ = 1, 10 do now = now + 0.1 c:Paint() end
+  ok(plain(c):find("short", 1, true), "and new words still arrive", plain(c))
+end
 
 -- 4. the prompt: slots rotate, events jump in and hold, cursor blinks, width kept,
 --    words fade out and in (Arn: "fade in and out animations, not hard cuts")
