@@ -243,7 +243,7 @@ do
   _G.GetCursorPosition = function() return 240, 240 end
 
   assert(loadfile("Minimap.lua"))()
-  ok(T.MINIMAP_MINOR == 1 and T.Minimap and T.MinimapItems, "Minimap.lua loads and exports")
+  ok(T.MINIMAP_MINOR == 2 and T.Minimap and T.MinimapItems, "Minimap.lua loads and exports")
 
   -- the rows: a note and a tick that are FUNCTIONS are asked when the menu opens, not when the
   -- addon loaded - the whole reason a menu can replace a command that printed the answer
@@ -323,6 +323,22 @@ do
   ok(pcall(function() m2.rows[1]:Click() end), "a row that throws is caught, not raised")
   b.opts.menu = spec
 
+  -- A COLLECTOR'S BACKING LIFTED OVER THE ICON goes back under it after a click (EllesmereUI:
+  -- its click hook raises every child of the button to DIALOG; Arn, 14 Oct: "the minimap icon
+  -- still go dim when i click them")
+  local backing = { level = 99, strata = "DIALOG" }
+  function backing:SetFrameLevel(n) self.level = n end
+  function backing:SetFrameStrata(s) self.strata = s end
+  local keepTimer = _G.C_Timer
+  _G.C_Timer = { After = function(_, fn) fn() end }
+  b.GetChildren = function() return backing end
+  b.GetFrameLevel = function() return 8 end
+  b.GetFrameStrata = function() return "MEDIUM" end
+  b:Click("LeftButton")
+  ok(backing.level == 7 and backing.strata == "MEDIUM", "after a click, a backing lifted over the icon goes back below the button")
+  b:ToggleMenu()
+  b.GetChildren, b.GetFrameLevel, b.GetFrameStrata, _G.C_Timer = nil, nil, nil, keepTimer
+
   -- right-click is the options window, without going through the menu
   b:Click("RightButton")
   ok(ran.options2 == true, "right-clicking runs the options window directly")
@@ -388,6 +404,42 @@ do
   -- and with EllesmereUI absent, nothing about any of this runs
   _G.EllesmereUI = nil
   ok(T.AdoptEllesmereUI() == false, "with EllesmereUI gone, BiSTheme keeps its own look")
+end
+
+-- 7. windows that do not open on top of each other (Arn, 14 Oct: "if a window is open it does not
+--    open right on top of another one"). The placement is a pure function; the frames only feed it.
+do
+  local okL, why = pcall(function() assert(loadfile("Options.lua"))() end)
+  ok(okL and T.OPTIONS_MINOR == 3 and T.DodgeRect and T.OPEN, "Options.lua minor 3 loads, with the dodge", why)
+  ok(T.OPTIONS and T.OPTIONS.RATIO == 1.43, "the BiSTheme standard window shape is 1.43:1 (Arn, 14 Oct)")
+  -- SECTIONS MOVED AROUND, NOT PADDED (Arn: "it added empty space ... but did not move sections
+  -- around"): BiS Tools' options - tools 4 rows, farm 6, recap 8, social 3, threat 3, bg 4
+  if T.PourColumns then
+    local function blk(n) local b = {} for i = 1, n do b[i] = i end return b end
+    local bl = { blk(4), blk(6), blk(8), blk(3), blk(3), blk(4) }
+    local cols = T.PourColumns(bl, 2, 1)
+    local a, b = cols[1].h, cols[2].h
+    ok(#cols == 2 and math.max(a, b) == 14, "28 rows in two columns: 14 and 14, not 18 and 10", a .. "/" .. b)
+    ok(cols[1][1] == bl[1], "the column with the first section comes first")
+    local seen = 0
+    for _, c in ipairs(cols) do for _ = 1, #c do seen = seen + 1 end end
+    ok(seen == #bl, "every section placed once")
+  end
+  if T.DodgeRect then
+    local W, H = 1920, 1080
+    local open = { { 800, 400, 1100, 700 } }                                   -- a window in the middle
+    ok(T.DodgeRect({ 100, 400, 400, 700 }, open, W, H) == nil, "covering nothing: stays where it is")
+    local l, t = T.DodgeRect({ 850, 450, 1150, 750 }, open, W, H)
+    ok(l == 1100 + T.DODGE_GAP and t == 750, "on top of one: moved to its right, the same height", l, t)
+    l, t = T.DodgeRect({ 1700, 400, 1900, 700 }, { { 1650, 400, 1920, 700 } }, W, H)
+    ok(l == 1650 - T.DODGE_GAP - 200 and t == 700, "no room on the right: to its left", l, t)
+    l, t = T.DodgeRect({ 0, 500, 1920, 700 }, { { 0, 500, 1920, 700 } }, W, H)
+    ok(l == 0 and t == 500 - T.DODGE_GAP, "no room either side: below it", l, t)
+    l = T.DodgeRect({ 0, 0, 1920, 1080 }, { { 0, 0, 1920, 1080 } }, W, H)
+    ok(l == nil, "nowhere fits: left where it was, never off the screen")
+    l, t = T.DodgeRect({ 850, 450, 1150, 750 }, { { 800, 400, 1100, 700 }, { 1108, 400, 1408, 700 } }, W, H)
+    ok(l and not (l < 1408 and l + 300 > 800 and t > 400 and t - 300 < 700), "two open: covers neither", l, t)
+  end
 end
 
 if fails > 0 then error(fails .. " failed of " .. n) end
