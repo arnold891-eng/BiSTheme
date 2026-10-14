@@ -406,5 +406,27 @@ do
   ok(T.AdoptEllesmereUI() == false, "with EllesmereUI gone, BiSTheme keeps its own look")
 end
 
+-- 7. windows that do not open on top of each other (Arn, 14 Oct: "if a window is open it does not
+--    open right on top of another one"). The placement is a pure function; the frames only feed it.
+do
+  local okL, why = pcall(function() assert(loadfile("Options.lua"))() end)
+  ok(okL and T.OPTIONS_MINOR == 3 and T.DodgeRect and T.OPEN, "Options.lua minor 3 loads, with the dodge", why)
+  if T.DodgeRect then
+    local W, H = 1920, 1080
+    local open = { { 800, 400, 1100, 700 } }                                   -- a window in the middle
+    ok(T.DodgeRect({ 100, 400, 400, 700 }, open, W, H) == nil, "covering nothing: stays where it is")
+    local l, t = T.DodgeRect({ 850, 450, 1150, 750 }, open, W, H)
+    ok(l == 1100 + T.DODGE_GAP and t == 750, "on top of one: moved to its right, the same height", l, t)
+    l, t = T.DodgeRect({ 1700, 400, 1900, 700 }, { { 1650, 400, 1920, 700 } }, W, H)
+    ok(l == 1650 - T.DODGE_GAP - 200 and t == 700, "no room on the right: to its left", l, t)
+    l, t = T.DodgeRect({ 0, 500, 1920, 700 }, { { 0, 500, 1920, 700 } }, W, H)
+    ok(l == 0 and t == 500 - T.DODGE_GAP, "no room either side: below it", l, t)
+    l = T.DodgeRect({ 0, 0, 1920, 1080 }, { { 0, 0, 1920, 1080 } }, W, H)
+    ok(l == nil, "nowhere fits: left where it was, never off the screen")
+    l, t = T.DodgeRect({ 850, 450, 1150, 750 }, { { 800, 400, 1100, 700 }, { 1108, 400, 1408, 700 } }, W, H)
+    ok(l and not (l < 1408 and l + 300 > 800 and t > 400 and t - 300 < 700), "two open: covers neither", l, t)
+  end
+end
+
 if fails > 0 then error(fails .. " failed of " .. n) end
 print("ALL OK (" .. n .. " checks)")
