@@ -412,6 +412,19 @@ do
   local okL, why = pcall(function() assert(loadfile("Options.lua"))() end)
   ok(okL and T.OPTIONS_MINOR == 3 and T.DodgeRect and T.OPEN, "Options.lua minor 3 loads, with the dodge", why)
   ok(T.OPTIONS and T.OPTIONS.RATIO == 1.43, "the BiSTheme standard window shape is 1.43:1 (Arn, 14 Oct)")
+  -- SECTIONS MOVED AROUND, NOT PADDED (Arn: "it added empty space ... but did not move sections
+  -- around"): BiS Tools' options - tools 4 rows, farm 6, recap 8, social 3, threat 3, bg 4
+  if T.PourColumns then
+    local function blk(n) local b = {} for i = 1, n do b[i] = i end return b end
+    local bl = { blk(4), blk(6), blk(8), blk(3), blk(3), blk(4) }
+    local cols = T.PourColumns(bl, 2, 1)
+    local a, b = cols[1].h, cols[2].h
+    ok(#cols == 2 and math.max(a, b) == 14, "28 rows in two columns: 14 and 14, not 18 and 10", a .. "/" .. b)
+    ok(cols[1][1] == bl[1], "the column with the first section comes first")
+    local seen = 0
+    for _, c in ipairs(cols) do for _ = 1, #c do seen = seen + 1 end end
+    ok(seen == #bl, "every section placed once")
+  end
   if T.DodgeRect then
     local W, H = 1920, 1080
     local open = { { 800, 400, 1100, 700 } }                                   -- a window in the middle
