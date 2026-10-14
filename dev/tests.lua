@@ -411,6 +411,7 @@ end
 do
   local okL, why = pcall(function() assert(loadfile("Options.lua"))() end)
   ok(okL and T.OPTIONS_MINOR == 3 and T.DodgeRect and T.OPEN, "Options.lua minor 3 loads, with the dodge", why)
+  ok(T.OPTIONS and T.OPTIONS.RATIO == 1.43, "the BiSTheme standard window shape is 1.43:1 (Arn, 14 Oct)")
   if T.DodgeRect then
     local W, H = 1920, 1080
     local open = { { 800, 400, 1100, 700 } }                                   -- a window in the middle
