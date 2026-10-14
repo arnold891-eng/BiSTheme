@@ -243,7 +243,7 @@ do
   _G.GetCursorPosition = function() return 240, 240 end
 
   assert(loadfile("Minimap.lua"))()
-  ok(T.MINIMAP_MINOR == 1 and T.Minimap and T.MinimapItems, "Minimap.lua loads and exports")
+  ok(T.MINIMAP_MINOR == 2 and T.Minimap and T.MinimapItems, "Minimap.lua loads and exports")
 
   -- the rows: a note and a tick that are FUNCTIONS are asked when the menu opens, not when the
   -- addon loaded - the whole reason a menu can replace a command that printed the answer
@@ -322,6 +322,22 @@ do
   local m2 = b:OpenMenu()
   ok(pcall(function() m2.rows[1]:Click() end), "a row that throws is caught, not raised")
   b.opts.menu = spec
+
+  -- A COLLECTOR'S BACKING LIFTED OVER THE ICON goes back under it after a click (EllesmereUI:
+  -- its click hook raises every child of the button to DIALOG; Arn, 14 Oct: "the minimap icon
+  -- still go dim when i click them")
+  local backing = { level = 99, strata = "DIALOG" }
+  function backing:SetFrameLevel(n) self.level = n end
+  function backing:SetFrameStrata(s) self.strata = s end
+  local keepTimer = _G.C_Timer
+  _G.C_Timer = { After = function(_, fn) fn() end }
+  b.GetChildren = function() return backing end
+  b.GetFrameLevel = function() return 8 end
+  b.GetFrameStrata = function() return "MEDIUM" end
+  b:Click("LeftButton")
+  ok(backing.level == 7 and backing.strata == "MEDIUM", "after a click, a backing lifted over the icon goes back below the button")
+  b:ToggleMenu()
+  b.GetChildren, b.GetFrameLevel, b.GetFrameStrata, _G.C_Timer = nil, nil, nil, keepTimer
 
   -- right-click is the options window, without going through the menu
   b:Click("RightButton")
