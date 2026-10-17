@@ -6,6 +6,7 @@
 ## Author: Kumlust
 ## Version: 1.4.0
 ## X-Category: Library
+## SavedVariables: BiSThemeDB
 
 BiSTheme.lua
 Console.lua

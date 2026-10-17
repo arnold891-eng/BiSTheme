@@ -168,8 +168,32 @@ local function toHex(r, g, b)
 end
 T.toHex = toHex
 
---- Take the accent and the font from EllesmereUI, if it is there and the user
---- allows it. Answers true when the registration was accepted - not that it has
+--- Does the user want BiS windows in EllesmereUI's accent? Off unless they said so.
+function T.FollowEUI()
+  return type(BiSThemeDB) == "table" and BiSThemeDB.followEUI == true
+end
+
+--- Put the accent where it belongs: EllesmereUI's when the user opted in and EUI lent one, ours
+--- otherwise. Tells every window that drew itself in the old colour.
+function T.ApplyAccent()
+  T.ownAccent = T.ownAccent or T.hex.accent
+  local want = (T.FollowEUI() and T.euiAccent) or T.ownAccent
+  if T.hex.accent == want then return false end
+  T.hex.accent = want
+  T.LooksChanged()
+  return true
+end
+
+--- /bistheme eui on|off
+function T.SetFollowEUI(on)
+  if type(BiSThemeDB) ~= "table" then BiSThemeDB = {} end
+  BiSThemeDB.followEUI = on and true or nil
+  T.ApplyAccent()
+  return T.FollowEUI()
+end
+
+--- Take the font from EllesmereUI, and its accent if the user asked for it, if it is there and
+--- the user allows it. Answers true when the registration was accepted - not that it has
 --- run, which happens at PLAYER_LOGIN.
 function T.AdoptEllesmereUI()
   if not (EllesmereUI and EllesmereUI.RegisterSkin) then return false, "no EllesmereUI" end
@@ -182,9 +206,14 @@ function T.AdoptEllesmereUI()
       -- FIRST return and drops the rest, so toHex got the red and two nils and the accent never
       -- moved. Third time this trap has cost us something - the header's regen number (23 Sep),
       -- the cells row's colour (26 Sep), and now this.
-      -- THE ACCENT STAYS OURS (Arn, 16 Oct 2026). Borrowing it painted every BiS edge, header and
-      -- title in his EllesmereUI accent - white - and the family read as "all over the place". He
-      -- chose: "Always BiS purple". The font is still theirs; only the colour is not.
+      -- THE ACCENT IS OURS UNLESS YOU ASK (Arn, 16 Oct 2026). Borrowing it by default painted every
+      -- BiS edge, header and title in his EllesmereUI accent - white - and the family read as "all
+      -- over the place". But the borrowing was for people who tune their whole UI in EllesmereUI,
+      -- so it is one command away: /bistheme eui on. He chose "Purple, opt in to EUI".
+      local r, g, b
+      if S.GetAccentColor then r, g, b = S.GetAccentColor() end
+      T.euiAccent = toHex(r, g, b)
+      T.ApplyAccent()
       local path
       if S.GetFont then path = S.GetFont() end
       T.FONT = (type(path) == "string" and path ~= "") and path or nil
@@ -220,4 +249,20 @@ do
     T.AdoptEllesmereUI()
   end)
   T.looksFrame = f
+end
+
+-- /bistheme eui on|off - BiS windows in your EllesmereUI accent, or BiS purple (the default)
+function T.Slash(msg)
+  local word, arg = tostring(msg or ""):lower():match("^%s*(%S*)%s*(%S*)")
+  if word == "eui" and (arg == "on" or arg == "off") then T.SetFollowEUI(arg == "on") end
+  local on = T.FollowEUI()
+  local line = T.text("accent", "BiS> Theme") .. " accent: "
+    .. (on and ("EllesmereUI's" .. (T.euiAccent and "" or " (when it is installed)")) or "BiS purple")
+    .. T.text("muted", " - /bistheme eui on | off. /reload repaints every window.")
+  if DEFAULT_CHAT_FRAME then DEFAULT_CHAT_FRAME:AddMessage(line) end
+  return on, line
+end
+if SlashCmdList then
+  SLASH_BISTHEME1 = "/bistheme"
+  SlashCmdList.BISTHEME = T.Slash
 end
