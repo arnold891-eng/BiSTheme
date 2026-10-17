@@ -381,19 +381,20 @@ do
   ok(T.hex.accent == ownAccent, "and changes nothing until the callback runs")
   dispatch()
   ok(fired == 1, "the callback runs once")
-  ok(T.hex.accent == "33cc66", "the accent becomes the user's own", T.hex.accent)
+  -- ALWAYS BiS PURPLE (Arn, 16 Oct 2026): a white EllesmereUI accent turned every BiS edge white
+  ok(T.hex.accent == ownAccent, "the accent stays BiS purple, whatever EllesmereUI's is", T.hex.accent)
   local r, g, b = T.rgb("accent")
-  ok(math.abs(r - 0.2) < 0.01 and math.abs(g - 0.8) < 0.01,
-     "and every colour lookup follows it, cache and all", r .. "," .. g .. "," .. b)
-  ok(T.FONT and T.FONT:find("EllesmereUI", 1, true), "the font is theirs too", tostring(T.FONT))
+  ok(not (math.abs(r - 0.2) < 0.01 and math.abs(g - 0.8) < 0.01),
+     "and no colour lookup follows theirs", r .. "," .. g .. "," .. b)
+  ok(T.FONT and T.FONT:find("EllesmereUI", 1, true), "the font is still theirs", tostring(T.FONT))
 
   -- LIVE. Their guidelines say not to cache the getters: the user moves a slider mid-session.
   accent = { 1, 0.5, 0 }
   local repainted = false
   T.RegisterLooks(function() repainted = true end)
   for _, fn in ipairs(listeners) do fn() end
-  ok(T.hex.accent == "ff8000", "moving their accent slider moves ours", T.hex.accent)
-  ok(repainted, "and anything that drew itself in the old colour is told to draw again")
+  ok(T.hex.accent == ownAccent, "moving their accent slider leaves ours alone", T.hex.accent)
+  ok(repainted, "a change of their look still tells our windows to redraw (the font may have moved)")
 
   -- A FONT THE CLIENT WILL NOT TAKE is worse than an ugly one: a FontString whose SetFont failed
   -- draws nothing at all. So the path is tried, and the client's own is the fallback.

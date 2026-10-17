@@ -182,10 +182,9 @@ function T.AdoptEllesmereUI()
       -- FIRST return and drops the rest, so toHex got the red and two nils and the accent never
       -- moved. Third time this trap has cost us something - the header's regen number (23 Sep),
       -- the cells row's colour (26 Sep), and now this.
-      local r, g, b
-      if S.GetAccentColor then r, g, b = S.GetAccentColor() end
-      local hex = toHex(r, g, b)
-      if hex then T.hex.accent = hex end
+      -- THE ACCENT STAYS OURS (Arn, 16 Oct 2026). Borrowing it painted every BiS edge, header and
+      -- title in his EllesmereUI accent - white - and the family read as "all over the place". He
+      -- chose: "Always BiS purple". The font is still theirs; only the colour is not.
       local path
       if S.GetFont then path = S.GetFont() end
       T.FONT = (type(path) == "string" and path ~= "") and path or nil
