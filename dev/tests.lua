@@ -381,19 +381,34 @@ do
   ok(T.hex.accent == ownAccent, "and changes nothing until the callback runs")
   dispatch()
   ok(fired == 1, "the callback runs once")
-  ok(T.hex.accent == "33cc66", "the accent becomes the user's own", T.hex.accent)
-  local r, g, b = T.rgb("accent")
-  ok(math.abs(r - 0.2) < 0.01 and math.abs(g - 0.8) < 0.01,
-     "and every colour lookup follows it, cache and all", r .. "," .. g .. "," .. b)
-  ok(T.FONT and T.FONT:find("EllesmereUI", 1, true), "the font is theirs too", tostring(T.FONT))
+  -- PURPLE BY DEFAULT, EllesmereUI's ON REQUEST (Arn, 16 Oct 2026): a white EUI accent had turned
+  -- every BiS edge white. "/bistheme eui on" is for people who tune their whole UI in EUI.
+  ok(not T.FollowEUI(), "nobody follows EllesmereUI's accent until they ask")
+  ok(T.hex.accent == ownAccent, "so the accent stays BiS purple, whatever EllesmereUI's is", T.hex.accent)
+  ok(T.FONT and T.FONT:find("EllesmereUI", 1, true), "the font is theirs", tostring(T.FONT))
+
+  local repainted = 0
+  T.RegisterLooks(function() repainted = repainted + 1 end)
+  local on, line = T.Slash("eui on")
+  ok(on and T.FollowEUI(), "/bistheme eui on: follow it")
+  ok(type(BiSThemeDB) == "table" and BiSThemeDB.followEUI == true, "remembered across sessions")
+  ok(T.hex.accent == "33cc66", "the accent becomes the user's own at once", T.hex.accent)
+  local r, g = T.rgb("accent")
+  ok(math.abs(r - 0.2) < 0.01 and math.abs(g - 0.8) < 0.01, "and every colour lookup follows it")
+  ok(repainted >= 1, "and windows drawn in the old colour are told to redraw")
+  ok(line:find("EllesmereUI's", 1, true), "it says which", line)
 
   -- LIVE. Their guidelines say not to cache the getters: the user moves a slider mid-session.
   accent = { 1, 0.5, 0 }
-  local repainted = false
-  T.RegisterLooks(function() repainted = true end)
   for _, fn in ipairs(listeners) do fn() end
-  ok(T.hex.accent == "ff8000", "moving their accent slider moves ours", T.hex.accent)
-  ok(repainted, "and anything that drew itself in the old colour is told to draw again")
+  ok(T.hex.accent == "ff8000", "following: moving their accent slider moves ours", T.hex.accent)
+
+  T.Slash("eui off")
+  ok(not T.FollowEUI() and T.hex.accent == ownAccent, "/bistheme eui off: BiS purple again", T.hex.accent)
+  accent = { 0.1, 0.1, 0.9 }
+  for _, fn in ipairs(listeners) do fn() end
+  ok(T.hex.accent == ownAccent, "not following: their slider leaves ours alone", T.hex.accent)
+  BiSThemeDB = nil
 
   -- A FONT THE CLIENT WILL NOT TAKE is worse than an ugly one: a FontString whose SetFont failed
   -- draws nothing at all. So the path is tried, and the client's own is the fallback.
